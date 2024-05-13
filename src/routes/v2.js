@@ -1,47 +1,61 @@
+'use strict';
+
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const secretKey = 'your_secret_key';  
+const dataModules = require('../models');
+
+const bearerAuth = require('../auth/middleware/bearer.js');
+const permissions = require('../auth/middleware/acl.js');
 
 const router = express.Router();
 
+router.param('model', (req, res, next) => {
+  const modelName = req.params.model; // food
+  if (dataModules[modelName]) {
+    req.model = dataModules[modelName];
+    next();
+  } else {
+    next('Invalid Model');
+  }
+});
 
-function authenticateToken(req, res, next) {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; 
+// ---- /api/v1/food
+//      "food" is the :model parameter
+router.get('/:model', bearerAuth, permissions("read"), handleGetAll);
+router.get('/:model/:id', bearerAuth, permissions("read"), handleGetOne);
+router.post('/:model', bearerAuth, permissions("create"), handleCreate);
+router.put('/:model/:id', bearerAuth, permissions("update"), handleUpdate);
+router.delete('/:model/:id', bearerAuth, permissions("delete"), handleDelete);
 
-    if (token == null) return res.sendStatus(401); 
-    jwt.verify(token, secretKey, (err, user) => {
-        if (err) return res.sendStatus(403); 
-        req.user = user;
-        next();
-    });
+async function handleGetAll(req, res) {
+  // Food.get or Clothes.get
+  let allRecords = await req.model.get();
+  res.status(200).json(allRecords);
 }
 
-function checkCapability(capability) {
-    return (req, res, next) => {
-        if (req.user && req.user.capabilities && req.user.capabilities.includes(capability)) {
-            next();
-        } else {
-            res.status(403).json({ message: "Forbidden - Insufficient permissions" });
-        }
-    };
+async function handleGetOne(req, res) {
+  const id = req.params.id;
+  let theRecord = await req.model.get(id)
+  res.status(200).json(theRecord);
 }
 
-router.get('/resource', authenticateToken, (req, res) => {
-    res.json({ message: "Access granted for GET" });
-});
+async function handleCreate(req, res) {
+  let obj = req.body;
+  let newRecord = await req.model.create(obj);
+  res.status(201).json(newRecord);
+}
 
-router.post('/resource', authenticateToken, checkCapability('create'), (req, res) => {
-    res.json({ message: "Access granted for POST" });
-});
+async function handleUpdate(req, res) {
+  const id = req.params.id;
+  const obj = req.body;
+  let updatedRecord = await req.model.update(id, obj)
+  res.status(200).json(updatedRecord);
+}
 
-router.put('/resource', authenticateToken, checkCapability('update'), (req, res) => {
-    res.json({ message: "Access granted for PUT" });
-});
+async function handleDelete(req, res) {
+  let id = req.params.id;
+  let deletedRecord = await req.model.delete(id);
+  res.status(200).json(deletedRecord);
+}
 
-router.delete('/resource', authenticateToken, checkCapability('delete'), (req, res) => {
-    res.json({ message: "Access granted for DELETE" });
-});
 
-// Export the router
 module.exports = router;
